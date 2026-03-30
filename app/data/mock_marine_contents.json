@@ -1,0 +1,62 @@
+[
+  {
+    "id": "mc_001",
+    "service_name": "부산 선상 낚시 체험",
+    "location": "부산",
+    "activity": "낚시",
+    "price": 80000,
+    "capacity": 4,
+    "available_start": "2026-04-04T09:00:00Z",
+    "available_end": "2026-04-04T13:00:00Z",
+    "transport_info": "대중교통 가능",
+    "source": "mock_naver_shopping",
+    "detail_url": "https://example.com/item/1",
+    "thumbnail_url": "https://example.com/item/1.jpg",
+    "description": "부산 앞바다에서 즐기는 초보자용 선상 낚시 체험"
+  },
+  {
+    "id": "mc_002",
+    "service_name": "부산 프리미엄 요트 투어",
+    "location": "부산",
+    "activity": "요트",
+    "price": 150000,
+    "capacity": 2,
+    "available_start": "2026-04-05T14:00:00Z",
+    "available_end": "2026-04-05T17:00:00Z",
+    "transport_info": "주차 가능",
+    "source": "mock_naver_shopping",
+    "detail_url": "https://example.com/item/2",
+    "thumbnail_url": "https://example.com/item/2.jpg",
+    "description": "해운대 마리나 출발 프리미엄 요트 투어"
+  },
+  {
+    "id": "mc_003",
+    "service_name": "부산 가족 보트 투어",
+    "location": "부산",
+    "activity": "보트",
+    "price": 60000,
+    "capacity": 6,
+    "available_start": "2026-04-05T10:00:00Z",
+    "available_end": "2026-04-05T12:00:00Z",
+    "transport_info": "셔틀 제공",
+    "source": "mock_public_data",
+    "detail_url": "https://example.com/item/3",
+    "thumbnail_url": "https://example.com/item/3.jpg",
+    "description": "가족 단위로 편하게 즐기는 부산 보트 투어"
+  },
+  {
+    "id": "mc_004",
+    "service_name": "제주 선상 낚시 반일 코스",
+    "location": "제주",
+    "activity": "낚시",
+    "price": 90000,
+    "capacity": 3,
+    "available_start": "2026-04-04T08:00:00Z",
+    "available_end": "2026-04-04T12:00:00Z",
+    "transport_info": "대중교통 가능",
+    "source": "mock_naver_shopping",
+    "detail_url": "https://example.com/item/4",
+    "thumbnail_url": "https://example.com/item/4.jpg",
+    "description": "제주 앞바다 감성돔 낚시 체험"
+  }
+]
