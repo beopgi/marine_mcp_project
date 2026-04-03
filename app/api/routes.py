@@ -8,6 +8,7 @@ from app.schemas.recommendation import (
     PipelineRunResponse,
     RecommendRequest,
     RecommendResponse,
+    RecommendationResult,
 )
 from app.services.pipeline import build_agent
 
@@ -54,8 +55,9 @@ def recommend(request: RecommendRequest) -> RecommendResponse:
     return RecommendResponse(recommendation=recommendation)
 
 
-@router.post('/pipeline/run', response_model=PipelineRunResponse)
-def run_pipeline(request: UserQueryRequest) -> PipelineRunResponse:
-    """Run full architecture pipeline end-to-end."""
+@router.post('/pipeline/run', response_model=RecommendationResult)
+def run_pipeline(request: UserQueryRequest) -> RecommendationResult:
+    """Run full architecture pipeline end-to-end and return final recommendation only."""
 
-    return agent.run_pipeline(request.user_input)
+    result = agent.run_pipeline(request.user_input)
+    return result.final_recommendation

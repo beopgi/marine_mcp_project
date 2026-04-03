@@ -1,17 +1,17 @@
 """Schemas for recommendation requests and responses."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, HttpUrl
 
 from app.schemas.content import MarineContentItem
 from app.schemas.query import StructuredQuery
 
 
 class RecommendationResult(BaseModel):
-    """Single-item recommendation output with explainability."""
+    """Final user-facing recommendation output."""
 
-    selected_id: str | None
-    reason: str
-    matched_constraints: list[str]
+    title: str
+    link: HttpUrl | str | None = None
+    message: str
 
 
 class RecommendRequest(BaseModel):

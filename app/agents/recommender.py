@@ -1,16 +1,25 @@
 """Candidate-constrained recommendation engine."""
 
+from __future__ import annotations
+
+from typing import Any
+
 from app.agents.prompt_builder import RecommendationPromptBuilder
+from app.llm.gemini_provider import GeminiProvider
 from app.schemas.content import MarineContentItem
 from app.schemas.query import StructuredQuery
 from app.schemas.recommendation import RecommendationResult
 
 
 class CandidateConstrainedRecommender:
-    """Deterministic recommender with LLM-prompt extension point."""
+    """Gemini-based top-1 recommender constrained to candidate pool only."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        llm_provider: GeminiProvider | None = None,
+    ) -> None:
         self.prompt_builder = RecommendationPromptBuilder()
+        self.llm_provider = llm_provider
 
     def recommend(
         self,
@@ -18,58 +27,177 @@ class CandidateConstrainedRecommender:
         query: StructuredQuery,
         candidates: list[MarineContentItem],
     ) -> RecommendationResult:
-        """Select top-1 from candidate pool only using explicit constraints + relevance scoring."""
+        """Select exactly one item from the candidate pool using Gemini."""
 
         if not candidates:
             return RecommendationResult(
-                selected_id=None,
-                reason='조건에 맞는 후보가 없어 추천할 항목이 없습니다.',
-                matched_constraints=[],
+                title="추천 결과 없음",
+                link=None,
+                message="조건에 맞는 후보가 없어 추천할 항목이 없습니다.",
             )
 
-        # Prompt is built for future external LLM usage. Current prototype uses deterministic ranking.
-        _prompt = self.prompt_builder.build(query, candidates)
-        _ = _prompt
+        if not self.llm_provider or not self.llm_provider.is_available():
+            return self._fallback_recommend(query=query, candidates=candidates)
 
-        scored = sorted(candidates, key=lambda c: self._score_item(c, query, user_input), reverse=True)
-        top = scored[0]
-
-        matched_constraints = self._matched_constraints(top, query)
-        reason = f"'{top.service_name}'가 위치/활동/예산/인원 조건 적합도가 가장 높습니다."
-
-        return RecommendationResult(
-            selected_id=top.id,
-            reason=reason,
-            matched_constraints=matched_constraints,
+        prompt = self.prompt_builder.build(
+            user_input=user_input,
+            query=query,
+            candidates=candidates,
         )
 
-    def _score_item(self, item: MarineContentItem, query: StructuredQuery, user_input: str) -> int:
+        try:
+            result = self.llm_provider.generate_json(
+                prompt=prompt,
+                temperature=0.1,
+            )
+
+            print("[Recommender] raw llm response:", result)
+
+            selected_title = self._extract_selected_title(result)
+            selected_item = self._find_candidate_by_title(selected_title, candidates)
+            message = self._extract_message(result, selected_item)
+            link = self._extract_link(result, selected_item)
+
+            return RecommendationResult(
+                title=selected_item.service_name,
+                link=link,
+                message=message,
+            )
+
+        except Exception as e:
+            print("[Recommender] recommendation failed, fallback used:", str(e))
+            return self._fallback_recommend(query=query, candidates=candidates)
+
+    def _extract_selected_title(self, result: dict[str, Any]) -> str:
+        """Extract selected candidate title from Gemini JSON response."""
+        title = result.get("title")
+
+        if not isinstance(title, str) or not title.strip():
+            raise ValueError("LLM response missing valid title")
+
+        return title.strip()
+
+    def _extract_message(
+        self,
+        result: dict[str, Any],
+        selected_item: MarineContentItem,
+    ) -> str:
+        """Extract recommendation message from Gemini JSON response."""
+        message = result.get("message")
+
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+
+        return (
+            f"'{selected_item.service_name}'이(가) 사용자 질의와 "
+            f"후보군 조건에 가장 적합한 항목으로 선택되었습니다."
+        )
+
+    def _extract_link(
+        self,
+        result: dict[str, Any],
+        selected_item: MarineContentItem,
+    ) -> str | None:
+        """Extract and validate link from Gemini JSON response."""
+        link = result.get("link")
+
+        if link is None:
+            return selected_item.map_search_url
+
+        if not isinstance(link, str) or not link.strip():
+            return selected_item.map_search_url
+
+        link = link.strip()
+
+        # 현재 구조에서는 정확히 map_search_url과 일치해야 함
+        if selected_item.map_search_url and link == selected_item.map_search_url:
+            return link
+
+        # 다르면 후보군의 정답 링크로 고정
+        return selected_item.map_search_url
+
+    def _find_candidate_by_title(
+        self,
+        selected_title: str,
+        candidates: list[MarineContentItem],
+    ) -> MarineContentItem:
+        """Find selected candidate in current candidate pool by exact title match."""
+        normalized_title = selected_title.strip()
+
+        for candidate in candidates:
+            if candidate.service_name and candidate.service_name.strip() == normalized_title:
+                return candidate
+
+        raise ValueError(
+            f"title not found in candidate pool: {selected_title}"
+        )
+
+    def _fallback_recommend(
+        self,
+        query: StructuredQuery,
+        candidates: list[MarineContentItem],
+    ) -> RecommendationResult:
+        """
+        Fallback recommendation when Gemini is unavailable or invalid.
+        """
+        if not candidates:
+            return RecommendationResult(
+                title="추천 결과 없음",
+                link=None,
+                message="조건에 맞는 후보가 없어 추천할 항목이 없습니다.",
+            )
+
+        scored = sorted(
+            candidates,
+            key=lambda item: self._fallback_score(item, query),
+            reverse=True,
+        )
+        top = scored[0]
+
+        return RecommendationResult(
+            title=top.service_name,
+            link=top.map_search_url,
+            message=(
+                f"LLM 추천 결과를 사용할 수 없어 후보군 내부 규칙 기반으로 "
+                f"'{top.service_name}'을(를) 최상위 항목으로 선택했습니다."
+            ),
+        )
+
+    def _fallback_score(
+        self,
+        item: MarineContentItem,
+        query: StructuredQuery,
+    ) -> int:
+        """Simple fallback score using only current available fields."""
         score = 0
+
         if query.location and item.location == query.location:
             score += 100
+
         if query.activity and item.activity == query.activity:
             score += 90
-        if query.price_max is not None and item.price <= query.price_max:
-            score += 70
-        if query.people_count is not None and item.capacity >= query.people_count:
-            score += 60
 
-        # Lightweight semantic signal for MVP.
-        if item.description and query.activity and query.activity in item.description:
+        combined_text = " ".join(
+            filter(
+                None,
+                [
+                    item.service_name,
+                    item.category,
+                    item.description,
+                    item.address,
+                    item.road_address,
+                    item.transport_info,
+                ],
+            )
+        ).lower()
+
+        if query.preference and query.preference.lower() in combined_text:
+            score += 30
+
+        if query.purpose and query.purpose.lower() in combined_text:
             score += 20
-        if item.description and any(token in item.description for token in user_input.split() if len(token) > 1):
-            score += 10
-        return score
 
-    @staticmethod
-    def _matched_constraints(item: MarineContentItem, query: StructuredQuery) -> list[str]:
-        matched = []
-        if query.location and item.location == query.location:
-            matched.append('location')
-        if query.activity and item.activity == query.activity:
-            matched.append('activity')
-        if query.price_max is not None and item.price <= query.price_max:
-            matched.append('budget')
-        if query.people_count is not None and item.capacity >= query.people_count:
-            matched.append('people_count')
-        return matched
+        if query.avoid and query.avoid.lower() in combined_text:
+            score -= 50
+
+        return score

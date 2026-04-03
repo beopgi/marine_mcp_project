@@ -1,7 +1,5 @@
 """Schemas for marine content and candidate lists."""
 
-from datetime import datetime
-
 from pydantic import BaseModel, HttpUrl
 
 from app.schemas.query import StructuredQuery
@@ -14,14 +12,20 @@ class MarineContentItem(BaseModel):
     service_name: str
     location: str
     activity: str
-    price: int
-    capacity: int
-    available_start: datetime
-    available_end: datetime
+
+    category: str | None = None
+    telephone: str | None = None
+    address: str | None = None
+    road_address: str | None = None
+    mapx: str | None = None
+    mapy: str | None = None
+
     transport_info: str | None = None
     source: str
-    detail_url: HttpUrl | str
-    thumbnail_url: HttpUrl | str | None = None
+
+    source_url: HttpUrl | str | None = None
+    map_search_url: HttpUrl | str | None = None
+
     description: str | None = None
 
 
