@@ -233,3 +233,7 @@ pytest -q
 포함 테스트:
 - 질의 구조화 필드 추출 확인
 - pipeline 실행 시 추천 ID가 후보군 내부인지 확인(후보군 제한형 추천 보장)
+
+## 12) 포스터
+<img width="480" height="801" alt="image" src="https://github.com/user-attachments/assets/13265f9b-8dfb-442b-b5ef-de03d577d322" />
+
