@@ -5,15 +5,23 @@ from fastapi import APIRouter, HTTPException
 from app.schemas.content import MCPSearchRequest, MCPSearchResponse
 from app.schemas.query import QueryStructureResponse, UserQueryRequest
 from app.schemas.recommendation import (
+    HomeRecommendationRequest,
+    HomeRecommendationResponse,
     PipelineRunResponse,
     RecommendRequest,
     RecommendResponse,
     RecommendationResult,
 )
+from app.services.home_recommendation import HomeRecommendationService
 from app.services.pipeline import build_agent
+from app.repositories.user_preference_repo import UserPreferenceRepository
 
 router = APIRouter()
 agent = build_agent()
+home_recommendation_service = HomeRecommendationService(
+    agent=agent,
+    user_preference_repository=UserPreferenceRepository(),
+)
 
 
 @router.get('/health')
@@ -61,3 +69,12 @@ def run_pipeline(request: UserQueryRequest) -> RecommendationResult:
 
     result = agent.run_pipeline(request.user_input)
     return result.final_recommendation
+
+@router.post('/api/recommendations/home', response_model=HomeRecommendationResponse)
+def recommend_home(request: HomeRecommendationRequest) -> HomeRecommendationResponse:
+    """Tag-based home recommendation endpoint for Flutter BANU."""
+
+    return home_recommendation_service.recommend_home(
+        user_id=request.user_id,
+        location=request.location,
+    )

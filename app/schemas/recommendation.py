@@ -28,6 +28,25 @@ class RecommendResponse(BaseModel):
     recommendation: RecommendationResult
 
 
+
+
+class HomeRecommendationRequest(BaseModel):
+    """Flutter home recommendation request."""
+
+    user_id: int
+    location: str = Field(..., min_length=1)
+
+
+class HomeRecommendationResponse(BaseModel):
+    """Flutter home recommendation response."""
+
+    title: str
+    message: str
+    link: HttpUrl | str | None = None
+    image_url: HttpUrl | str | None = None
+    matched_tags: list[str] = Field(default_factory=list)
+
+
 class PipelineRunResponse(BaseModel):
     """Full pipeline response including all major outputs."""
 
