@@ -237,3 +237,122 @@ pytest -q
 ## 12) 포스터
 <img width="480" height="801" alt="image" src="https://github.com/user-attachments/assets/13265f9b-8dfb-442b-b5ef-de03d577d322" />
 
+
+---
+
+## 13) Flutter 홈 대시보드 연동
+
+`POST /api/home/dashboard`는 Flutter 홈 화면에서 바로 사용할 수 있도록 DB에 저장된 최신 위치, 기상청 날씨, 기존 후보군 제한형 추천 결과를 함께 반환합니다. 기존 `/api/recommendations/home` 응답은 호환성을 위해 유지합니다.
+
+### 처리 흐름
+
+1. 요청의 `user_id` 또는 `clerk_id`를 확인합니다.
+2. `DATABASE_URL`로 연결한 DB에서 사용자 최신 위치를 조회합니다.
+3. 조회한 `latitude`/`longitude`를 기상청 DFS 격자 좌표 `nx`/`ny`로 변환합니다.
+4. KMA 초단기실황(`getUltraSrtNcst`)과 초단기예보(`getUltraSrtFcst`)를 조회해 날씨를 정규화합니다.
+5. 위치의 `region` 또는 `address`로 기존 `StructuredQuery.location`을 구성합니다.
+6. 기존 MCP/Naver 후보 수집, 정규화, 필터링, 후보군 제한형 LLM 추천을 그대로 실행합니다.
+7. `weather`는 후보 제거용 강한 필터가 아니라 LLM prompt와 fallback ranking의 보조 context로만 사용합니다.
+
+### 필요한 환경변수
+
+```bash
+DATABASE_URL=postgresql+asyncpg://user:password@host:5432/dbname
+DB_ENABLED=true
+
+# 실제 Spring Boot DB 스키마가 다르면 아래 mapping을 조정하세요.
+DB_LOCATION_TABLE=location_logs
+DB_LOCATION_USER_ID_COLUMN=user_id
+DB_LOCATION_CLERK_ID_COLUMN=clerk_id
+DB_LOCATION_LATITUDE_COLUMN=latitude
+DB_LOCATION_LONGITUDE_COLUMN=longitude
+DB_LOCATION_REGION_COLUMN=region
+DB_LOCATION_ADDRESS_COLUMN=address
+DB_LOCATION_ACCURACY_COLUMN=accuracy_m
+DB_LOCATION_RECORDED_AT_COLUMN=recorded_at
+DB_LOCATION_CREATED_AT_COLUMN=created_at
+
+KMA_ENABLED=true
+KMA_API_KEY=...
+KMA_BASE_URL=https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0
+KMA_TIMEOUT_SECONDS=5
+```
+
+> `KMA_ENABLED=false`이거나 `KMA_API_KEY`가 없으면 `weather=null`로 응답하고 추천은 계속 진행합니다. DB 비밀번호와 KMA API key는 코드와 로그에 출력하지 않습니다.
+
+### 요청 예시
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/home/dashboard \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": 1,
+    "user_input": "오늘 근처에서 할만한 해양 액티비티 추천해줘",
+    "preference": "가볍게 즐길 수 있는 체험"
+  }'
+```
+
+`clerk_id` 기준 조회도 지원합니다.
+
+```json
+{
+  "clerk_id": "user_xxx",
+  "user_input": "오늘 근처에서 할만한 해양 액티비티 추천해줘",
+  "activity": null,
+  "preference": "가볍게 즐길 수 있는 체험"
+}
+```
+
+### 응답 예시
+
+```json
+{
+  "user_id": 1,
+  "clerk_id": "user_xxx",
+  "location": {
+    "latitude": 35.1796,
+    "longitude": 129.0756,
+    "region": "부산",
+    "address": "부산광역시 해운대구",
+    "recorded_at": "2026-05-12T15:00:00+09:00"
+  },
+  "weather": {
+    "temperature": 23.4,
+    "precipitation_type": "none",
+    "precipitation_amount": 0.0,
+    "humidity": 65,
+    "wind_speed": 4.2,
+    "wind_direction": "NW",
+    "sky": "cloudy",
+    "observed_at": "2026-05-12T15:00:00+09:00"
+  },
+  "weather_items": [
+    {
+      "time": "3 pm",
+      "temperature": 23,
+      "sky": "cloudy",
+      "precipitation_type": "none",
+      "wind_speed": 4.2
+    }
+  ],
+  "recommendation": {
+    "title": "동삼어촌체험마을",
+    "link": "https://...",
+    "message": "현재 위치와 날씨를 고려했을 때 가볍게 체험하기 좋은 후보입니다.",
+    "image_url": null,
+    "matched_tags": ["낚시", "체험"]
+  }
+}
+```
+
+### 에러 처리
+
+- DB 설정 없음/연결 실패: `503` + `dependency_error`
+- 사용자 최신 위치 없음: `404` + `no_location_found`
+- KMA API key 없음/timeout/파싱 실패: `weather=null`, 추천 계속 진행
+- Naver 후보 없음: `recommendation.title="추천 결과 없음"`
+- LLM 실패: 기존 fallback recommender 사용
+
+### Flutter에서 호출할 endpoint
+
+홈 화면의 날씨 카드와 AI 추천 카드를 함께 채우려면 `POST /api/home/dashboard`를 호출하면 됩니다. 기존 단일 추천 카드용 `/api/recommendations/home`은 깨지지 않도록 그대로 유지되어 있습니다.

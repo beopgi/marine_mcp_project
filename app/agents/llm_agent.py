@@ -5,6 +5,7 @@ from app.agents.recommender import CandidateConstrainedRecommender
 from app.mcp.client import MCPClient
 from app.schemas.query import StructuredQuery
 from app.schemas.recommendation import PipelineRunResponse, RecommendationResult
+from app.schemas.weather import WeatherContext
 
 
 class LLMAgent:
@@ -33,12 +34,14 @@ class LLMAgent:
         user_input: str,
         query: StructuredQuery,
         candidates,
+        weather_context: WeatherContext | None = None,
     ) -> RecommendationResult:
         """Step 3: Candidate-constrained recommendation."""
         return self.recommender.recommend(
             user_input=user_input,
             query=query,
             candidates=candidates,
+            weather_context=weather_context,
         )
 
     def run_pipeline(self, user_input: str) -> PipelineRunResponse:

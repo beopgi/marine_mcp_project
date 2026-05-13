@@ -4,6 +4,7 @@ import json
 
 from app.schemas.content import MarineContentItem
 from app.schemas.query import StructuredQuery
+from app.schemas.weather import WeatherContext
 
 
 class RecommendationPromptBuilder:
@@ -36,6 +37,10 @@ class RecommendationPromptBuilder:
         "- return only one final recommendation\n"
         "- use available candidate fields and linked references when helpful\n"
         "- do not fabricate unsupported facts"
+        "\n\nWeather context is supplemental ranking evidence only. "
+        "If rain/snow/strong wind is present, be cautious with outdoor marine activities. "
+        "If weather is clear/sunny/cloudy with no precipitation, experiential candidates such as yacht, boat, fishing, and hands-on activities may be evaluated more positively. "
+        "Never create a place, company, service, title, or link outside the candidate list because of weather."
     )
 
     FORMAT_PROMPT = (
@@ -56,6 +61,7 @@ class RecommendationPromptBuilder:
         user_input: str,
         query: StructuredQuery,
         candidates: list[MarineContentItem],
+        weather_context: WeatherContext | None = None,
     ) -> str:
         candidate_dicts = [c.model_dump(mode="json") for c in candidates]
 
@@ -65,5 +71,11 @@ class RecommendationPromptBuilder:
             f"[Format]\n{self.FORMAT_PROMPT}\n\n"
             f"[Original User Input]\n{user_input}\n\n"
             f"[Structured Query]\n{query.model_dump_json(indent=2)}\n\n"
+            f"[Weather Context]\n{self._format_weather_context(weather_context)}\n\n"
             f"[Candidates]\n{json.dumps(candidate_dicts, ensure_ascii=False, indent=2)}"
         )
+
+    def _format_weather_context(self, weather_context: WeatherContext | None) -> str:
+        if weather_context is None:
+            return "No weather context available. Do not assume weather conditions."
+        return weather_context.model_dump_json(indent=2)
