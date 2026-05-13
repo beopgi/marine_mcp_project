@@ -9,6 +9,7 @@ from app.llm.gemini_provider import GeminiProvider
 from app.schemas.content import MarineContentItem
 from app.schemas.query import StructuredQuery
 from app.schemas.recommendation import RecommendationResult
+from app.schemas.weather import WeatherContext
 
 
 class CandidateConstrainedRecommender:
@@ -26,6 +27,7 @@ class CandidateConstrainedRecommender:
         user_input: str,
         query: StructuredQuery,
         candidates: list[MarineContentItem],
+        weather_context: WeatherContext | None = None,
     ) -> RecommendationResult:
         """Select exactly one item from the candidate pool using Gemini."""
 
@@ -37,12 +39,13 @@ class CandidateConstrainedRecommender:
             )
 
         if not self.llm_provider or not self.llm_provider.is_available():
-            return self._fallback_recommend(query=query, candidates=candidates)
+            return self._fallback_recommend(query=query, candidates=candidates, weather_context=weather_context)
 
         prompt = self.prompt_builder.build(
             user_input=user_input,
             query=query,
             candidates=candidates,
+            weather_context=weather_context,
         )
 
         try:
@@ -66,7 +69,7 @@ class CandidateConstrainedRecommender:
 
         except Exception as e:
             print("[Recommender] recommendation failed, fallback used:", str(e))
-            return self._fallback_recommend(query=query, candidates=candidates)
+            return self._fallback_recommend(query=query, candidates=candidates, weather_context=weather_context)
 
     def _extract_selected_title(self, result: dict[str, Any]) -> str:
         """Extract selected candidate title from Gemini JSON response."""
@@ -136,6 +139,7 @@ class CandidateConstrainedRecommender:
         self,
         query: StructuredQuery,
         candidates: list[MarineContentItem],
+        weather_context: WeatherContext | None = None,
     ) -> RecommendationResult:
         """
         Fallback recommendation when Gemini is unavailable or invalid.
@@ -149,7 +153,7 @@ class CandidateConstrainedRecommender:
 
         scored = sorted(
             candidates,
-            key=lambda item: self._fallback_score(item, query),
+            key=lambda item: self._fallback_score(item, query, weather_context),
             reverse=True,
         )
         top = scored[0]
@@ -167,7 +171,8 @@ class CandidateConstrainedRecommender:
         self,
         item: MarineContentItem,
         query: StructuredQuery,
-    ) -> int:
+        weather_context: WeatherContext | None = None,
+    ) -> float:
         """Simple fallback score using only current available fields."""
         score = 0
 
@@ -200,4 +205,49 @@ class CandidateConstrainedRecommender:
         if query.avoid and query.avoid.lower() in combined_text:
             score -= 50
 
+        score += self._weather_score_adjustment(item, weather_context)
+
         return score
+
+    def _weather_score_adjustment(
+        self,
+        item: MarineContentItem,
+        weather_context: WeatherContext | None,
+    ) -> float:
+        """Adjust fallback ranking with weather without removing candidates."""
+        if weather_context is None:
+            return 0.0
+
+        adjustment = 0.0
+        precipitation_type = weather_context.precipitation_type
+        precipitation_amount = weather_context.precipitation_amount or 0.0
+        wind_speed = weather_context.wind_speed or 0.0
+        sky = weather_context.sky
+
+        combined_text = " ".join(
+            filter(
+                None,
+                [
+                    item.service_name,
+                    item.category,
+                    item.description,
+                    item.activity,
+                ],
+            )
+        ).lower()
+        outdoor_keywords = ["요트", "보트", "낚시", "크루즈", "서핑", "체험", "투어"]
+        is_outdoor_marine = any(keyword in combined_text for keyword in outdoor_keywords)
+
+        if precipitation_type in {"rain", "snow", "rain_snow", "drizzle", "drizzle_snow", "snow_flurry"}:
+            adjustment -= 12.0 if is_outdoor_marine else 5.0
+
+        if precipitation_amount > 0:
+            adjustment -= min(10.0, precipitation_amount * 2.0)
+
+        if wind_speed >= 8.0 and any(keyword in combined_text for keyword in ["요트", "보트", "낚시", "크루즈"]):
+            adjustment -= 15.0
+
+        if precipitation_type in {None, "none"} and precipitation_amount == 0 and sky in {None, "clear", "sunny", "cloudy"}:
+            adjustment += 5.0 if is_outdoor_marine else 2.0
+
+        return adjustment
